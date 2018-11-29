@@ -24,7 +24,6 @@ from fairseq.meters import AverageMeter, StopwatchMeter
 def main(args):
 
     # To see if I can change it
-    # 什么情况，问啥不能提交到自己的额库里面啊
     if args.max_tokens is None:
         args.max_tokens = 6000
     print(args)
