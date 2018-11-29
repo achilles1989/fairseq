@@ -49,6 +49,12 @@ def get_parser():
     parser.add_argument("--tgtdict", metavar="FP", help="reuse given target dictionary")
 
     parser.add_argument(
+        "--pref",
+        metavar="FP",
+        default=None,
+        help="comma separated, train file prefixes",
+    )
+    parser.add_argument(
         "--padding-factor",
         metavar="N",
         default=8,
@@ -103,7 +109,7 @@ def main(args):
     def dict_path(lang):
         return dest_path("dict", lang) + ".txt"
 
-    group_src, group_tgt = readH5(args,args.destdir,'train')
+    group_src, group_tgt = readH5(args,args.destdir,args.pref)
     # readH5(args,args.destdir,'valid')
     # readH5(args,args.destdir,'test')
 
@@ -111,9 +117,9 @@ def main(args):
         if args.tgtdict:
             tgt_dict = dictionary.Dictionary.load(args.tgtdict)
         else:
-            assert (
-                args.trainpref
-            ), "--trainpref must be set if --tgtdict is not specified"
+            # assert (
+            #     args.trainpref
+            # ), "--trainpref must be set if --tgtdict is not specified"
             tgt_dict = build_dictionary(
                 group_tgt, args.workers
             )
@@ -199,19 +205,25 @@ def readH5(FLAGS, output_folder, output_prefix, num_workers=1):
                     pre_start = start
                     pre_index = index
                     continue
-                event.append(np.pad(raw_data[pre_start:raw_start[index - 1]],
-                                    (0, FLAGS.length + pre_start - raw_start[index - 1]), mode='constant'))
+                # event.append(np.pad(raw_data[pre_start:raw_start[index - 1]],
+                #                     (0, FLAGS.length + pre_start - raw_start[index - 1]), mode='constant'))
+                event.append(np.array(raw_data[pre_start:raw_start[index - 1]]))
                 event_length.append(int(raw_start[index - 1] - pre_start))
                 label_ind = raw_label['base'][pre_index:(index - 1)]
                 temp_label = []
                 for ind_x in range(0,len(label_ind)):
+                    # if FLAGS.replace and label_ind[ind_x] == 'C' and ind_x + 1 < len(label_ind) and label_ind[ind_x + 1] == 'G':
+                    #     temp_label.append(DNA_BASE['M'.decode('UTF-8')])
+                    # else:
+                    #     temp_label.append(DNA_BASE[label_ind[ind_x].decode('UTF-8')])
                     if FLAGS.replace and label_ind[ind_x] == 'C' and ind_x + 1 < len(label_ind) and label_ind[ind_x + 1] == 'G':
-                        temp_label.append(DNA_BASE['M'.decode('UTF-8')])
+                        temp_label.append('M'.decode('UTF-8'))
                     else:
-                        temp_label.append(DNA_BASE[label_ind[ind_x].decode('UTF-8')])
+                        temp_label.append(label_ind[ind_x].decode('UTF-8'))
                 # temp_label = [DNA_BASE[x.decode('UTF-8')] for x in label_ind]
-                label.append(
-                    np.pad(temp_label, (0, FLAGS.length - index + 1 + pre_index), mode='constant', constant_values=-1))
+                # label.append(
+                #     np.pad(temp_label, (0, FLAGS.length - index + 1 + pre_index), mode='constant', constant_values=-1))
+                label.append(np.array(temp_label))
                 label_length.append(index - 1 - pre_index)
                 pre_index = index - 1
                 pre_start = raw_start[index - 1]
@@ -223,8 +235,12 @@ def readH5(FLAGS, output_folder, output_prefix, num_workers=1):
 
         while len(event) > FLAGS.batch:
             for index in range(0, FLAGS.batch):
-                bin_h.write(event[index].tolist())
-                bin_h_label.write(label[index].tolist())
+                event[index].tofile(bin_h,' ',format='%s')
+                bin_h.write('\n'.encode('UTF-8'))
+                label[index].tofile(bin_h_label,' ',format='%s')
+                bin_h_label.write('\n'.encode('UTF-8'))
+                # bin_h.write('\t'.join(map(str,event[index].tolist())))
+                # bin_h_label.write('\t'.join(map(str,label[index].tolist())))
             del event[:FLAGS.batch]
             del event_length[:FLAGS.batch]
             del label[:FLAGS.batch]
@@ -232,22 +248,26 @@ def readH5(FLAGS, output_folder, output_prefix, num_workers=1):
             return True
         return False
 
+    pref_src = FLAGS.source_lang+'-'+FLAGS.target_lang+'.'+FLAGS.source_lang+'.'
+    pref_tgt = FLAGS.source_lang+'-'+FLAGS.target_lang+'.'+FLAGS.target_lang+'.'
+
     for file_n in group_h5:
         if file_n.endswith('fast5'):
             if output_file_input is None:
-                output_file_input = open(output_folder + os.path.sep + output_prefix +'.input-label.input.'+ str(batch_idx), 'wb+')
-                output_file_label = open(output_folder + os.path.sep + output_prefix +'.input-label.label.'+ str(batch_idx), 'wb+')
+                output_file_input = open(output_folder + os.path.sep + output_prefix +pref_src+ str(batch_idx), 'wb+')
+                output_file_label = open(output_folder + os.path.sep + output_prefix +pref_tgt+ str(batch_idx), 'wb+')
             output_state = extract_fast5(file_n, output_file_input, output_file_label)
-            print("    %d fast5 file done. %d signals read already.\n" % (batch_fast5_idx,len(event)))
+            # print("    %d fast5 file done. %d signals read already.\n" % (batch_fast5_idx,len(event)))
             batch_fast5_idx += 1
             if output_state:
+                group_src.append(output_folder + os.path.sep + output_prefix +pref_src+ str(batch_idx))
+                group_tgt.append(output_folder + os.path.sep + output_prefix +pref_tgt+ str(batch_idx))
                 batch_idx += 1
                 output_file_input.close()
                 output_file_label.close()
-                output_file_input = open(output_folder + os.path.sep + output_prefix +'.input-label.input.'+ str(batch_idx), 'wb+')
-                output_file_label = open(output_folder + os.path.sep + output_prefix +'.input-label.label.'+ str(batch_idx), 'wb+')
-                group_src.append(output_folder + os.path.sep + output_prefix +'.input-label.input.'+ str(batch_idx))
-                group_tgt.append(output_folder + os.path.sep + output_prefix +'.input-label.label.'+ str(batch_idx))
+                output_file_input = open(output_folder + os.path.sep + output_prefix +pref_src+ str(batch_idx), 'wb+')
+                output_file_label = open(output_folder + os.path.sep + output_prefix +pref_tgt+ str(batch_idx), 'wb+')
+
                 print("%d batch transferred completed.\n" % (batch_idx - 1))
 
 
@@ -257,25 +277,23 @@ def readH5(FLAGS, output_folder, output_prefix, num_workers=1):
     if not output_state:
         output_file_input.close()
         output_file_label.close()
-        os.remove(output_folder + os.path.sep + output_prefix +'.input-label.input.' + str(batch_idx))
-        os.remove(output_folder + os.path.sep + output_prefix +'.input-label.label.'+ str(batch_idx))
-        group_src.remove(output_folder + os.path.sep + output_prefix + '.input-label.input.' + str(batch_idx))
-        group_tgt.remove(output_folder + os.path.sep + output_prefix + '.input-label.label.' + str(batch_idx))
+        os.remove(output_folder + os.path.sep + output_prefix +pref_src + str(batch_idx))
+        os.remove(output_folder + os.path.sep + output_prefix +pref_tgt+ str(batch_idx))
 
     with open(output_folder + os.path.sep + "data.meta.txt", 'w+') as meta_file:
         meta_file.write("signal_length " + str(FLAGS.length) + "\n")
         meta_file.write("file_batch_size " + str(FLAGS.batch) + "\n")
         meta_file.write("normalization " + FLAGS.normalization + "\n")
         meta_file.write("basecall_group " + FLAGS.basecall_group + "\n")
-        meta_file.write("basecall_subgroup" + FLAGS.basecall_subgroup + "\n")
-        meta_file.write("chromosome" + FLAGS.chrom + "\n")
-        meta_file.write("chromosome_start" + FLAGS.chrom_start + "\n")
-        meta_file.write("chromosome_end" + FLAGS.chrom_end + "\n")
+        meta_file.write("basecall_subgroup " + FLAGS.basecall_subgroup + "\n")
+        meta_file.write("chromosome " + FLAGS.chrom + "\n")
+        meta_file.write("chromosome_start " + str(FLAGS.chrom_start) + "\n")
+        meta_file.write("chromosome_end " + str(FLAGS.chrom_end) + "\n")
         if FLAGS.replace:
             meta_file.write("DNA_base A-0 C-1 G-2 T-3" + "\n")
         else:
             meta_file.write("DNA_base A-0 C-1 G-2 T-3 M-4" + "\n")
-        meta_file.write("data_type " + FLAGS.mode + "\n")
+        # meta_file.write("data_type " + FLAGS.mode + "\n")
 
     return group_src,group_tgt
 
