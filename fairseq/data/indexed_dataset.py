@@ -186,10 +186,14 @@ class IndexedRawTextDataset(IndexedDataset):
         with open(path, 'r') as f:
             for line in f:
                 self.lines.append(line.strip('\n'))
-                tokens = Tokenizer.tokenize(
-                    line, dictionary, add_if_not_exist=False,
-                    append_eos=self.append_eos, reverse_order=self.reverse_order,
-                ).long()
+                if dictionary:
+                    tokens = Tokenizer.tokenize(
+                        line, dictionary, add_if_not_exist=False,
+                        append_eos=self.append_eos, reverse_order=self.reverse_order,
+                    ).long()
+                else:
+                    tokens = line.strip('\n')
+
                 self.tokens_list.append(tokens)
                 self.sizes.append(len(tokens))
         self.sizes = np.array(self.sizes)
